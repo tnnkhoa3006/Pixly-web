@@ -409,9 +409,7 @@ export default function DownloadSection() {
                     <motion.a
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.97 }}
-                      href={platformData?.url || "#"}
-                      target={platformData ? "_blank" : undefined}
-                      rel="noopener noreferrer"
+                      href={platformData && selected ? `/api/download?file=${encodeURIComponent(platformData.filename)}&tag=${encodeURIComponent(selected.version)}` : "#"}
                       style={{
                         display: "flex",
                         alignItems: "center",
