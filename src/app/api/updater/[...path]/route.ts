@@ -54,7 +54,8 @@ export async function GET(
   }
 
   // latest.json - fetch from GitHub API and rewrite URLs
-  if (joinedPath === "latest.json") {
+  // Also handle bare /api/updater (no path) as alias for latest.json
+  if (joinedPath === "latest.json" || joinedPath === "") {
     try {
       const res = await fetchWithAuth(`${GITHUB_API}/releases/latest`);
       const release = await res.json();
@@ -67,6 +68,7 @@ export async function GET(
       };
 
       const proxyBase = `${req.nextUrl.origin}/api/updater`;
+      const assetNames: string[] = release.assets.map((a: { name: string }) => a.name);
 
       for (const asset of release.assets) {
         const name: string = asset.name;
@@ -74,10 +76,12 @@ export async function GET(
 
         if (name.endsWith(".sig")) continue; // signatures handled with their files
 
-        if (name.endsWith(".msi.zip")) {
+        if (name.endsWith(".nsis.zip")) {
           latestJson.platforms["windows-x86_64"] = { signature: `${url}.sig`, url };
-        } else if (name.endsWith(".nsis.zip")) {
+        } else if (name.endsWith(".msi.zip")) {
           latestJson.platforms["windows-x86_64"] = { signature: `${url}.sig`, url };
+        } else if (name.endsWith(".exe") && assetNames.includes(`${name}.sig`)) {
+          latestJson.platforms["windows-x86_64"] = { signature: `${proxyBase}/${name}.sig`, url };
         } else if (name.endsWith(".app.tar.gz")) {
           if (name.includes("aarch64") || name.includes("arm64")) {
             latestJson.platforms["darwin-aarch64"] = { signature: `${url}.sig`, url };
