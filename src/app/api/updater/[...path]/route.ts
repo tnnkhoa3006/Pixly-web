@@ -60,7 +60,7 @@ export async function GET(
       const release = await res.json();
 
       const latestJson = {
-        version: release.tag_name,
+        version: release.tag_name.replace(/^v/, ""),
         notes: release.name || release.tag_name,
         pub_date: release.published_at,
         platforms: {} as Record<string, { signature: string; url: string }>,
