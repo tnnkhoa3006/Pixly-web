@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from "next/server";
 const REPO = "tnnkhoa3006/Pixly";
 const GITHUB_API = `https://api.github.com/repos/${REPO}`;
 
+type RouteParams = { path: string[] };
+
 function authHeaders(token: string) {
   return {
     Authorization: `Bearer ${token}`,
@@ -12,7 +14,7 @@ function authHeaders(token: string) {
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[]> } }
+  { params }: { params: Promise<RouteParams> }
 ) {
   const { path } = await params;
   const joinedPath = path.join("/");
