@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const REPO = "tnnkhoa3006/Pixly";
-const GITHUB_RAW = `https://github.com/${REPO}/releases/latest/download`;
 const GITHUB_API = `https://api.github.com/repos/${REPO}`;
 
 async function fetchWithAuth(url: string) {
@@ -105,16 +104,28 @@ export async function GET(
     }
   }
 
-  // Update files (.sig, .zip, etc.) - download from GitHub with auth
+  // Update files (.sig, .zip, etc.) - download from GitHub API with auth
   try {
-    const githubUrl = `${GITHUB_RAW}/${joinedPath}`;
-    const fileRes = await fetch(githubUrl, {
-      headers: { Authorization: `Bearer ${token}` },
+    // Find the asset via GitHub API (works for private repos)
+    const latestRes = await fetchWithAuth(`${GITHUB_API}/releases/latest`);
+    const release = await latestRes.json();
+    const asset = release.assets?.find((a: { name: string }) => a.name === joinedPath);
+
+    if (!asset) {
+      return NextResponse.json({ error: "Asset not found" }, { status: 404 });
+    }
+
+    // Download the asset via API with auth
+    const fileRes = await fetch(asset.url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/octet-stream",
+      },
       redirect: "follow",
     });
 
     if (!fileRes.ok) {
-      return NextResponse.json({ error: "File not found" }, { status: 404 });
+      return NextResponse.json({ error: "Download failed" }, { status: 502 });
     }
 
     const headers = new Headers();
