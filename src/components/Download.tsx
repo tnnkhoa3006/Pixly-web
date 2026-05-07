@@ -20,7 +20,7 @@ interface ReleaseData {
 const PLATFORM_META = [
   { key: "windows", icon: <Monitor size={28} />, name: "Windows", format: ".msi", primary: true },
   { key: "linux", icon: <HardDrive size={28} />, name: "Linux", format: ".AppImage", primary: false },
-  { key: "ios", icon: <Smartphone size={28} />, name: "iOS (Simulator)", format: ".zip", primary: false },
+  { key: "ios", icon: <Smartphone size={28} />, name: "iOS", format: ".zip", primary: false },
 ];
 
 const TRUST = [
