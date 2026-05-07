@@ -3,46 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 const REPO = "tnnkhoa3006/Pixly";
 const GITHUB_API = `https://api.github.com/repos/${REPO}`;
 
-async function fetchWithAuth(url: string) {
-  const token = process.env.GITHUB_TOKEN;
-  if (!token) throw new Error("GITHUB_TOKEN not configured");
-
-  const res = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github.v3+json",
-    },
-  });
-
-  if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
-  return res;
-}
-
-function rewriteUrls(obj: unknown, proxyBase: string): unknown {
-  if (typeof obj === "string") {
-    // Rewrite GitHub download URLs to go through proxy
-    if (obj.includes("github.com") && obj.includes("/releases/download/")) {
-      const filename = obj.split("/").pop();
-      return `${proxyBase}/${filename}`;
-    }
-    // Handle relative URLs (just filename)
-    if (obj.endsWith(".sig") || obj.endsWith(".zip") || obj.endsWith(".msi") || obj.endsWith(".AppImage")) {
-      return `${proxyBase}/${obj}`;
-    }
-    return obj;
-  }
-  if (Array.isArray(obj)) return obj.map((item) => rewriteUrls(item, proxyBase));
-  if (obj && typeof obj === "object") {
-    return Object.fromEntries(
-      Object.entries(obj).map(([key, value]) => [key, rewriteUrls(value, proxyBase)])
-    );
-  }
-  return obj;
+function authHeaders(token: string) {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github.v3+json",
+  };
 }
 
 export async function GET(
   req: NextRequest,
-  { params }: { params: Promise<{ path: string[] }> }
+  { params }: { params: Promise<{ path: string[]> } }
 ) {
   const { path } = await params;
   const joinedPath = path.join("/");
@@ -52,11 +22,17 @@ export async function GET(
     return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
   }
 
-  // latest.json - fetch from GitHub API and rewrite URLs
-  // Also handle bare /api/updater (no path) as alias for latest.json
+  // latest.json - build update manifest from latest release
   if (joinedPath === "latest.json" || joinedPath === "") {
     try {
-      const res = await fetchWithAuth(`${GITHUB_API}/releases/latest`);
+      const res = await fetch(`${GITHUB_API}/releases/latest`, {
+        headers: authHeaders(token),
+      });
+
+      if (!res.ok) {
+        return NextResponse.json({ error: "No releases found" }, { status: 404 });
+      }
+
       const release = await res.json();
 
       const latestJson = {
@@ -71,51 +47,80 @@ export async function GET(
 
       for (const asset of release.assets) {
         const name: string = asset.name;
-        const url = `${proxyBase}/${name}`;
 
-        if (name.endsWith(".sig")) continue; // signatures handled with their files
+        if (name.endsWith(".sig")) continue;
 
+        // Windows NSIS installer
         if (name.endsWith(".nsis.zip")) {
-          latestJson.platforms["windows-x86_64"] = { signature: `${url}.sig`, url };
-        } else if (name.endsWith(".msi.zip")) {
-          latestJson.platforms["windows-x86_64"] = { signature: `${url}.sig`, url };
-        } else if (name.endsWith(".exe") && assetNames.includes(`${name}.sig`)) {
-          latestJson.platforms["windows-x86_64"] = { signature: `${proxyBase}/${name}.sig`, url };
-        } else if (name.endsWith(".app.tar.gz")) {
-          if (name.includes("aarch64") || name.includes("arm64")) {
-            latestJson.platforms["darwin-aarch64"] = { signature: `${url}.sig`, url };
-          } else {
-            latestJson.platforms["darwin-x86_64"] = { signature: `${url}.sig`, url };
-          }
-        } else if (name.endsWith(".AppImage.tar.gz")) {
-          if (name.includes("arm") || name.includes("aarch64")) {
-            latestJson.platforms["linux-aarch64"] = { signature: `${url}.sig`, url };
-          } else {
-            latestJson.platforms["linux-x86_64"] = { signature: `${url}.sig`, url };
-          }
+          latestJson.platforms["windows-x86_64"] = {
+            signature: `${proxyBase}/${name}.sig`,
+            url: `${proxyBase}/${name}`,
+          };
+        }
+        // Windows MSI
+        else if (name.endsWith(".msi.zip")) {
+          latestJson.platforms["windows-x86_64"] = {
+            signature: `${proxyBase}/${name}.sig`,
+            url: `${proxyBase}/${name}`,
+          };
+        }
+        // Windows standalone .exe with matching .sig
+        else if (name.endsWith(".exe") && assetNames.includes(`${name}.sig`)) {
+          latestJson.platforms["windows-x86_64"] = {
+            signature: `${proxyBase}/${name}.sig`,
+            url: `${proxyBase}/${name}`,
+          };
+        }
+        // macOS
+        else if (name.endsWith(".app.tar.gz")) {
+          const arch = name.includes("aarch64") || name.includes("arm64")
+            ? "darwin-aarch64"
+            : "darwin-x86_64";
+          latestJson.platforms[arch] = {
+            signature: `${proxyBase}/${name}.sig`,
+            url: `${proxyBase}/${name}`,
+          };
+        }
+        // Linux
+        else if (name.endsWith(".AppImage.tar.gz")) {
+          const arch = name.includes("arm") || name.includes("aarch64")
+            ? "linux-aarch64"
+            : "linux-x86_64";
+          latestJson.platforms[arch] = {
+            signature: `${proxyBase}/${name}.sig`,
+            url: `${proxyBase}/${name}`,
+          };
         }
       }
 
       return NextResponse.json(latestJson, {
-        headers: { "Cache-Control": "public, s-maxage=300" },
+        headers: { "Cache-Control": "public, s-maxage=60" },
       });
-    } catch {
+    } catch (err) {
+      console.error("Updater latest.json error:", err);
       return NextResponse.json({ error: "Failed to fetch release" }, { status: 502 });
     }
   }
 
-  // Update files (.sig, .zip, etc.) - download from GitHub API with auth
+  // Proxy file download (.exe, .sig, etc.)
   try {
-    // Find the asset via GitHub API (works for private repos)
-    const latestRes = await fetchWithAuth(`${GITHUB_API}/releases/latest`);
-    const release = await latestRes.json();
+    // Get latest release assets
+    const releaseRes = await fetch(`${GITHUB_API}/releases/latest`, {
+      headers: authHeaders(token),
+    });
+
+    if (!releaseRes.ok) {
+      return NextResponse.json({ error: "Release not found" }, { status: 404 });
+    }
+
+    const release = await releaseRes.json();
     const asset = release.assets?.find((a: { name: string }) => a.name === joinedPath);
 
     if (!asset) {
       return NextResponse.json({ error: "Asset not found" }, { status: 404 });
     }
 
-    // Download the asset via API with auth
+    // Stream the asset from GitHub
     const fileRes = await fetch(asset.url, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -125,12 +130,12 @@ export async function GET(
     });
 
     if (!fileRes.ok) {
+      console.error("GitHub asset download failed:", fileRes.status);
       return NextResponse.json({ error: "Download failed" }, { status: 502 });
     }
 
     const headers = new Headers();
-    const contentType = fileRes.headers.get("Content-Type");
-    headers.set("Content-Type", contentType || "application/octet-stream");
+    headers.set("Content-Type", fileRes.headers.get("Content-Type") || "application/octet-stream");
 
     if (joinedPath.endsWith(".sig")) {
       headers.set("Content-Type", "text/plain");
@@ -142,8 +147,10 @@ export async function GET(
       headers.set("Content-Length", fileRes.headers.get("Content-Length")!);
     }
 
-    return new NextResponse(fileRes.body, { headers });
-  } catch {
+    // Stream response body
+    return new NextResponse(fileRes.body, { status: 200, headers });
+  } catch (err) {
+    console.error("Updater proxy error:", err);
     return NextResponse.json({ error: "Download failed" }, { status: 500 });
   }
 }
