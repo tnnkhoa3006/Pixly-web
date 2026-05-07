@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Download, Monitor, Apple, HardDrive, ChevronDown, Loader2 } from "lucide-react";
+import { Download, Monitor, Apple, HardDrive, Smartphone, ChevronDown, Loader2 } from "lucide-react";
 
 interface PlatformData {
   url: string;
@@ -21,6 +21,7 @@ const PLATFORM_META = [
   { key: "windows", icon: <Monitor size={28} />, name: "Windows", format: ".msi", primary: true },
   { key: "macos", icon: <Apple size={28} />, name: "macOS", format: ".dmg", primary: false },
   { key: "linux", icon: <HardDrive size={28} />, name: "Linux", format: ".AppImage", primary: false },
+  { key: "ios", icon: <Smartphone size={28} />, name: "iOS (Simulator)", format: ".zip", primary: false },
 ];
 
 const TRUST = [
@@ -250,9 +251,9 @@ export default function DownloadSection() {
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(3, 1fr)",
+            gridTemplateColumns: "repeat(2, 1fr)",
             gap: 20,
-            maxWidth: 860,
+            maxWidth: 920,
             marginLeft: "auto",
             marginRight: "auto",
             marginBottom: 40,
@@ -260,7 +261,7 @@ export default function DownloadSection() {
         >
           {loading
             ? // Loading skeletons
-              [0, 1, 2].map((i) => (
+              [0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
                   style={{

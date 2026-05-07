@@ -24,11 +24,12 @@ function formatBytes(bytes: number): string {
   return `~${Math.round(mb)} MB`;
 }
 
-function matchAsset(name: string): "windows" | "macos" | "linux" | null {
+function matchAsset(name: string): "windows" | "macos" | "linux" | "ios" | null {
   const lower = name.toLowerCase();
   if (lower.endsWith(".msi") || (lower.endsWith(".exe") && !lower.includes("updater"))) return "windows";
   if (lower.endsWith(".dmg") || lower.endsWith(".app.tar.gz")) return "macos";
   if (lower.endsWith(".appimage")) return "linux";
+  if (lower.endsWith(".ipa") || (lower.endsWith(".zip") && lower.includes("ios"))) return "ios";
   return null;
 }
 
