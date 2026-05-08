@@ -12,6 +12,22 @@ function authHeaders(token: string) {
   };
 }
 
+async function fetchAssetBody(assetUrl: string, token: string) {
+  const res = await fetch(assetUrl, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/octet-stream",
+    },
+    redirect: "follow",
+  });
+
+  if (!res.ok) {
+    throw new Error(`GitHub asset download failed: ${res.status}`);
+  }
+
+  return res;
+}
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<RouteParams> }
@@ -45,7 +61,23 @@ export async function GET(
       };
 
       const proxyBase = `${req.nextUrl.origin}/api/updater`;
-      const assetNames: string[] = release.assets.map((a: { name: string }) => a.name);
+      const assetsByName = new Map<string, { name: string; url: string }>(
+        release.assets.map((a: { name: string; url: string }) => [a.name, a])
+      );
+
+      const addPlatform = async (platform: string, name: string) => {
+        const sigAsset = assetsByName.get(`${name}.sig`);
+        if (!sigAsset) return;
+
+        const sigRes = await fetchAssetBody(sigAsset.url, token);
+        const signature = (await sigRes.text()).trim();
+        if (!signature) return;
+
+        latestJson.platforms[platform] = {
+          signature,
+          url: `${proxyBase}/${name}`,
+        };
+      };
 
       for (const asset of release.assets) {
         const name: string = asset.name;
@@ -54,44 +86,29 @@ export async function GET(
 
         // Windows NSIS installer
         if (name.endsWith(".nsis.zip")) {
-          latestJson.platforms["windows-x86_64"] = {
-            signature: `${proxyBase}/${name}.sig`,
-            url: `${proxyBase}/${name}`,
-          };
+          await addPlatform("windows-x86_64", name);
         }
         // Windows MSI
         else if (name.endsWith(".msi.zip")) {
-          latestJson.platforms["windows-x86_64"] = {
-            signature: `${proxyBase}/${name}.sig`,
-            url: `${proxyBase}/${name}`,
-          };
+          await addPlatform("windows-x86_64", name);
         }
         // Windows standalone .exe with matching .sig
-        else if (name.endsWith(".exe") && assetNames.includes(`${name}.sig`)) {
-          latestJson.platforms["windows-x86_64"] = {
-            signature: `${proxyBase}/${name}.sig`,
-            url: `${proxyBase}/${name}`,
-          };
+        else if (name.endsWith(".exe")) {
+          await addPlatform("windows-x86_64", name);
         }
         // macOS
         else if (name.endsWith(".app.tar.gz")) {
           const arch = name.includes("aarch64") || name.includes("arm64")
             ? "darwin-aarch64"
             : "darwin-x86_64";
-          latestJson.platforms[arch] = {
-            signature: `${proxyBase}/${name}.sig`,
-            url: `${proxyBase}/${name}`,
-          };
+          await addPlatform(arch, name);
         }
         // Linux
         else if (name.endsWith(".AppImage.tar.gz")) {
           const arch = name.includes("arm") || name.includes("aarch64")
             ? "linux-aarch64"
             : "linux-x86_64";
-          latestJson.platforms[arch] = {
-            signature: `${proxyBase}/${name}.sig`,
-            url: `${proxyBase}/${name}`,
-          };
+          await addPlatform(arch, name);
         }
       }
 
@@ -123,18 +140,7 @@ export async function GET(
     }
 
     // Stream the asset from GitHub
-    const fileRes = await fetch(asset.url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/octet-stream",
-      },
-      redirect: "follow",
-    });
-
-    if (!fileRes.ok) {
-      console.error("GitHub asset download failed:", fileRes.status);
-      return NextResponse.json({ error: "Download failed" }, { status: 502 });
-    }
+    const fileRes = await fetchAssetBody(asset.url, token);
 
     const headers = new Headers();
     headers.set("Content-Type", fileRes.headers.get("Content-Type") || "application/octet-stream");
