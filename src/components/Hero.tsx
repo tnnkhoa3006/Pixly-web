@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Download, BookOpen, Monitor, Apple, HardDrive } from "lucide-react";
 
@@ -137,6 +138,19 @@ function PixelCanvas() {
 }
 
 export default function Hero() {
+  const [version, setVersion] = useState("v0.1.8");
+
+  useEffect(() => {
+    fetch("/api/releases")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data) && data.length > 0) {
+          setVersion(data[0].version);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <section className="relative flex items-center overflow-hidden" style={{ minHeight: "100vh", paddingTop: 64 }}>
       {/* Background gradient */}
@@ -170,7 +184,7 @@ export default function Hero() {
               }}
             >
               <span className="animate-pulse" style={{ width: 8, height: 8, borderRadius: "50%", background: "var(--accent)" }} />
-              v0.1.8 — Now Available
+              {version} — Now Available
             </motion.div>
 
             <h1
